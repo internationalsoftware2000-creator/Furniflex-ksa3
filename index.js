@@ -1,37 +1,52 @@
+
+
 const express = require("express");
 const cors = require("cors");
 const app = express();
 const port = process.env.PORT || 5144;
-const fs = require("fs");
-const FormData = require("form-data");
+// import express
+// import cors
+// create app
+// create port
+
 
 app.use(cors());
 app.use(express.json());
 
+
+// use cors for middleware without using you can't access server
+// The express.json() middleware is used to parse incoming JSON requests
+
+
+
 app.get("/", (req, res) => {
-	res.send("simple crud is running");
+  res.send("simple crud is running");
 });
 
-const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
-const { default: axios } = require("axios");
-const uri =
-	"mongodb+srv://mustafiz8260:BX58G1x7A189eFOO@bikroyelectroniscluster.9ujswdc.mongodb.net/?retryWrites=true&w=majority&appName=BikroyElectronisCluster";
+
+
+const { MongoClient, ServerApiVersion } = require('mongodb');
+const uri = "mongodb+srv://mustafiz8260:BX58G1x7A189eFOO@bikroyelectroniscluster.9ujswdc.mongodb.net/?retryWrites=true&w=majority&appName=BikroyElectronisCluster";
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
-	serverApi: {
-		version: ServerApiVersion.v1,
-		strict: true,
-		deprecationErrors: true,
-	},
+  serverApi: {
+    version: ServerApiVersion.v1,
+    strict: true,
+    deprecationErrors: true,
+  }
 });
 
 async function run() {
-	try {
-		// Connect the client to the server	(optional starting in v4.7)
-		await client.connect();
+  try {
+    // Connect the client to the server	(optional starting in v4.7)
+    // await client.connect();
+    // Send a ping to confirm a successful connection
+    // await client.db("admin").command({ ping: 1 });
+    console.log("Pinged your deployment. You successfully connected to MongoDB!");
 
-		const database = client.db("UsersDB");
+
+	const database = client.db("UsersDB");
 		const usersCollection = database.collection("users");
 		const categoryCollection = database.collection("categoryCollection");
 		const productsCollection = database.collection("productsCollection");
@@ -65,49 +80,68 @@ async function run() {
 		// });
 
 		app.get("/products", async (req, res) => {
-			const { limit, sortBy, sortOrder, category, minPrice, maxPrice, searchText } = req.query;
+			const {
+				limit,
+				sortBy,
+				sortOrder,
+				categories,
+				minPrice,
+				maxPrice,
+				searchText,
+				page,
+			} = req.query;
 
 			// Build the query object for MongoDB
 			const query = {};
-			const searchRegex = searchText ? new RegExp(searchText, 'i') : null;
-		
+			const searchRegex = searchText ? new RegExp(searchText, "i") : null;
+
 			// Add filters based on query parameters
-			if (category) {
-			  query.category = category;
+			if (categories) {
+				const categoryArray = categories.split(",");
+				query.category = { $in: categoryArray };
 			}
 			if (minPrice && maxPrice) {
-			  query.price = { $gte: parseInt(minPrice), $lte: parseInt(maxPrice) };
+				query.price = {
+					$gte: parseInt(minPrice),
+					$lte: parseInt(maxPrice),
+				};
 			} else if (minPrice) {
-			  query.price = { $gte: parseInt(minPrice) };
+				query.price = { $gte: parseInt(minPrice) };
 			} else if (maxPrice) {
-			  query.price = { $lte: parseInt(maxPrice) };
+				query.price = { $lte: parseInt(maxPrice) };
 			}
 			if (searchText) {
-			  query.$or = [
-				{ title: searchRegex },
-				{ description: searchRegex },
-				{ price: parseInt(searchText) || 0 },
-				{ category: searchRegex }
-			  ];
+				query.$or = [
+					{ title: searchRegex },
+					{ description: searchRegex },
+					{ price: parseInt(searchText) || 0 },
+					{ category: searchRegex },
+				];
 			}
-		
+
 			// Sort based on sortBy and sortOrder if provided
 			let sortOptions = {};
 			if (sortBy) {
-			  sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
+				sortOptions[sortBy] = sortOrder === "desc" ? -1 : 1;
 			}
-		
+
+			const limitInt = parseInt(limit) || 30; // Default size is 10
+			const pageInt = parseInt(page) || 0; // Default page is 0 (first page)
+
 			// Execute query with optional limit and sorting
 			let cursor = productsCollection.find(query);
 			if (sortBy) {
-			  cursor = cursor.sort(sortOptions);
+				cursor = cursor.sort(sortOptions);
 			}
-			if (limit) {
-			  cursor = cursor.limit(parseInt(limit));
-			}
-		
+			cursor = cursor.skip(pageInt * limitInt).limit(limitInt);
+
 			const result = await cursor.toArray();
 			res.json(result);
+		});
+
+		app.get("/productCount", async (req, res) => {
+			const count = await productsCollection.estimatedDocumentCount();
+			res.send({ count });
 		});
 
 		app.get("/products/:id", async (req, res) => {
@@ -174,22 +208,21 @@ async function run() {
 			res.send(result);
 		});
 
-		await client.db("admin").command({ ping: 1 });
-		console.log(
-			"Pinged your deployment. You successfully connected to MongoDB!"
-		);
-	} finally {
-		// Ensures that the client will close when you finish/error
-		// await client.close();
-	}
+	
+  } finally {
+    // Ensures that the client will close when you finish/error
+    // await client.close();
+  }
 }
 run().catch(console.dir);
 
+
+
+// server will respond with this text
+
+
 app.listen(port, () => {
-	console.log(`simple crud is running on ${port}`);
+  console.log(`simple crud is running on ${port}`);
 });
 
-// mustafiz8260
-// BX58G1x7A189eFOO
 
-// mongodb+srv://mustafiz8260:BX58G1x7A189eFOO@bikroyelectroniscluster.9ujswdc.mongodb.net/?retryWrites=true&w=majority&appName=BikroyElectronisCluster
