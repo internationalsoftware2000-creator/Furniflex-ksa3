@@ -25,7 +25,7 @@ app.get("/", (req, res) => {
 
 
 
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const uri = "mongodb+srv://mustafiz8260:BX58G1x7A189eFOO@bikroyelectroniscluster.9ujswdc.mongodb.net/?retryWrites=true&w=majority&appName=BikroyElectronisCluster";
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -110,7 +110,7 @@ async function run() {
 			} else if (maxPrice) {
 				query.price = { $lte: parseInt(maxPrice) };
 			}
-			if (searchText) {
+		if (searchText) {
 				query.$or = [
 					{ title: searchRegex },
 					{ description: searchRegex },
@@ -168,11 +168,11 @@ async function run() {
 			console.log(id, updateProduct);
 		});
 
-		//   Wishlist
+		//   Wishlist 
 
 		app.post("/wishlist", async (req, res) => {
 			const wishListProduct = req.body;
-			const query = { _id: wishListProduct._id };
+			const query = { productId: wishListProduct.productId };
 
 			const checkProduct = await wishListCollection.findOne(query);
 			console.log(checkProduct);
@@ -201,7 +201,7 @@ async function run() {
 		app.delete("/wishlist/:id", async (req, res) => {
 			const id = req.params.id;
 			const email = req.query.email;
-			const query = { _id: id };
+			const query = { _id: id }	;
 
 			const result = wishListCollection.deleteOne(query);
 
