@@ -250,7 +250,76 @@ async function run() {
 		// cart 
 
 
+		app.post("/cart", async (req, res) => {
+			const cartProduct = req.body;
+
+
+			console.log('Received cart product:', cartProduct);
+
+			const query = {
+				productId: cartProduct.productId,
+				email: cartProduct.email
+			};
+
+			console.log('Query:', query);
+
+			const checkProduct = await cartCollection.findOne(query);
+			console.log("checkpoint" ,checkProduct);
+
+			if (!checkProduct) {
+				const result = await cartCollection.insertOne(
+					cartProduct
+				);
+				res.send(result);
+			} else {
+				res.status(409).send({
+					message: "Product already exists in the cart",
+				});
+			}
+		});
+
+		app.get("/cart", async (req, res) => {
+			const email = req.query.email;
+			const query = { email: email };
+
+			const cursor = cartCollection.find(query);
+			const result = await cursor.toArray();
+			res.send(result);
+		});
+
+		app.put("/cart/:id", async (req, res) => {
+			const id = req.params.id;
+			const query = { _id: new ObjectId(id) };
+
+			const updateProduct = req.body.quantity;
+			console.log(id, updateProduct);
+			const result = await cartCollection.updateOne(query, {
+				$set: {
+					quantity : updateProduct
+				},
+			});
+			res.send(result);
+
+			console.log(id, updateProduct);
+		});
+		app.delete("/cart/:id", async (req, res) => {
+			const id = req.params.id;
+			const query = { _id: new ObjectId(id) };
+
+			console.log(id)
+
+			const result = cartCollection.deleteOne(query);
+
+			res.send(result);
+		});
+
+		app.delete("/allCartItem", async (req, res) => {
+			
+
 		
+			const result = await cartCollection.deleteMany({});
+			res.send(result);
+		});
 
 
 	} finally {
