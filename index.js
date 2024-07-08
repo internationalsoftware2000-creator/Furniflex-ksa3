@@ -20,7 +20,7 @@ app.use(express.json());
 
 
 app.get("/", (req, res) => {
-  res.send("simple crud is running");
+	res.send("simple crud is running");
 });
 
 
@@ -30,27 +30,28 @@ const uri = "mongodb+srv://mustafiz8260:BX58G1x7A189eFOO@bikroyelectroniscluster
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
-  serverApi: {
-    version: ServerApiVersion.v1,
-    strict: true,
-    deprecationErrors: true,
-  }
+	serverApi: {
+		version: ServerApiVersion.v1,
+		strict: true,
+		deprecationErrors: true,
+	}
 });
 
 async function run() {
-  try {
-    // Connect the client to the server	(optional starting in v4.7)
-    // await client.connect();
-    // Send a ping to confirm a successful connection
-    // await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+	try {
+		// Connect the client to the server	(optional starting in v4.7)
+		// await client.connect();
+		// Send a ping to confirm a successful connection
+		// await client.db("admin").command({ ping: 1 });
+		console.log("Pinged your deployment. You successfully connected to MongoDB!");
 
 
-	const database = client.db("UsersDB");
+		const database = client.db("UsersDB");
 		const usersCollection = database.collection("users");
 		const categoryCollection = database.collection("categoryCollection");
 		const productsCollection = database.collection("productsCollection");
 		const wishListCollection = database.collection("wishListCollection");
+		const cartCollection = database.collection("cartCollection");
 
 		// Category collections
 
@@ -110,7 +111,7 @@ async function run() {
 			} else if (maxPrice) {
 				query.price = { $lte: parseInt(maxPrice) };
 			}
-		if (searchText) {
+			if (searchText) {
 				query.$or = [
 					{ title: searchRegex },
 					{ description: searchRegex },
@@ -172,10 +173,19 @@ async function run() {
 
 		app.post("/wishlist", async (req, res) => {
 			const wishListProduct = req.body;
-			const query = { productId: wishListProduct.productId };
+
+
+			console.log('Received wishlist product:', wishListProduct);
+
+			const query = {
+				productId: wishListProduct.productId,
+				email: wishListProduct.email
+			};
+
+			console.log('Query:', query);
 
 			const checkProduct = await wishListCollection.findOne(query);
-			console.log(checkProduct);
+			console.log("checkpoint" ,checkProduct);
 
 			if (!checkProduct) {
 				const result = await wishListCollection.insertOne(
@@ -198,21 +208,55 @@ async function run() {
 			res.send(result);
 		});
 
+		app.get("/wishlistStatus", async (req, res) => {
+			const email = req.query.email;
+			const id = req.query.id;
+
+			 console.log(email , id)
+		
+			if(id && email){
+				const query = {
+					email: email,
+					productId: id
+				};
+			
+				try {
+					const cursor = await wishListCollection.find(query).toArray();
+			
+					if (cursor.length > 0) {
+						res.send({ wishListed: true });
+					} else {
+						res.send({ wishListed: false });
+					}
+				} catch (error) {
+					console.error("Error checking wishlist status:", error);
+					res.status(500).send({ message: "Internal server error" });
+				}
+			}
+		});
+		
+
 		app.delete("/wishlist/:id", async (req, res) => {
 			const id = req.params.id;
-			const email = req.query.email;
-			const query = { _id: id }	;
+			const query = { _id: new ObjectId(id) };
+
+			console.log(id)
 
 			const result = wishListCollection.deleteOne(query);
 
 			res.send(result);
 		});
 
-	
-  } finally {
-    // Ensures that the client will close when you finish/error
-    // await client.close();
-  }
+		// cart 
+
+
+		
+
+
+	} finally {
+		// Ensures that the client will close when you finish/error
+		// await client.close();
+	}
 }
 run().catch(console.dir);
 
@@ -222,7 +266,7 @@ run().catch(console.dir);
 
 
 app.listen(port, () => {
-  console.log(`simple crud is running on ${port}`);
+	console.log(`simple crud is running on ${port}`);
 });
 
 
