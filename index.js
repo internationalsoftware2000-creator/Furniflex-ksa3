@@ -52,6 +52,7 @@ async function run() {
 		const productsCollection = database.collection("productsCollection");
 		const wishListCollection = database.collection("wishListCollection");
 		const cartCollection = database.collection("cartCollection");
+		const ordersCollection = database.collection("ordersCollection");
 
 		// Category collections
 
@@ -301,6 +302,7 @@ async function run() {
 			res.send(result);
 
 			console.log(id, updateProduct);
+			console.log(result);
 		});
 		app.delete("/cart/:id", async (req, res) => {
 			const id = req.params.id;
@@ -314,12 +316,59 @@ async function run() {
 		});
 
 		app.delete("/allCartItem", async (req, res) => {
-			
-
 		
 			const result = await cartCollection.deleteMany({});
 			res.send(result);
 		});
+
+		app.post("/moveToCart", async (req, res) => {
+			const cartProducts = req.body;
+
+			const productIds = cartProducts.map(product => product._id);
+
+			// Find the existing products in the cart
+			const existingProducts = await cartCollection.find({ _id: { $in: productIds } }).toArray();
+			const existingProductIds = existingProducts.map(product => product._id);
+	
+			// Filter out the products that are already in the cart
+			const productsToInsert = cartProducts.filter(product => !existingProductIds.includes(product._id));
+	
+			// If all products are already in the cart, send a message
+			
+			
+			if (productsToInsert.length === 0) {
+				await wishListCollection.deleteMany({})
+				return res.status(400).send({ message: 'All products are already in the cart.' });
+			}
+			// Insert the non-existing products into the cart
+			const result = await cartCollection.insertMany(productsToInsert);
+			await wishListCollection.deleteMany({})
+			res.send(result);
+
+		});
+
+
+		app.post("/orders" , async (req , res) => {
+			const orders = req.body;
+			const result = await ordersCollection.insertOne(orders);
+			res.send(result);
+
+		})
+
+
+		app.get("/orders", async (req, res) => {
+			const email = req.query.email;
+			const query = { "customerDetail.email": email }; // Correct way to construct the query
+		
+			const cursor = ordersCollection.find(query).sort({ date: -1 });
+			const result = await cursor.toArray();
+			res.send(result);
+		});
+		
+
+
+
+
 
 
 	} finally {
