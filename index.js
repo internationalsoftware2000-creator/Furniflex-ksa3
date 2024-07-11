@@ -358,11 +358,47 @@ async function run() {
 
 		app.get("/orders", async (req, res) => {
 			const email = req.query.email;
-			const query = { "customerDetail.email": email }; // Correct way to construct the query
+			const query = { 
+				"customerDetail.email": email ,
+				 status : "pending" || "fulfilled"
+
+			}; // Correct way to construct the query
 		
 			const cursor = ordersCollection.find(query).sort({ date: -1 });
 			const result = await cursor.toArray();
 			res.send(result);
+		});
+
+		app.get("/cancelledOrder", async (req, res) => {
+			const email = req.query.email;
+			const query = { 
+				"customerDetail.email": email ,
+				 status : "cancelled"
+
+			}; // Correct way to construct the query
+		
+			const cursor = ordersCollection.find(query).sort({ date: -1 });
+			const result = await cursor.toArray();
+			res.send(result);
+		});
+
+
+		app.put("/order/update/:id", async (req, res) => {
+			const id = req.params.id;
+			const query = { _id: new ObjectId(id) };
+
+			const updatedStatus = req.body.status;
+			console.log(id, updatedStatus);
+
+			const result = await ordersCollection.updateOne(query, {
+				$set: {
+					status : updatedStatus
+				},
+			});
+			res.send(result);
+
+			// console.log(id, updateProduct);
+			console.log(result);
 		});
 		
 
