@@ -53,8 +53,65 @@ async function run() {
 		const wishListCollection = database.collection("wishListCollection");
 		const cartCollection = database.collection("cartCollection");
 		const ordersCollection = database.collection("ordersCollection");
+		const FlashSaleCollection = database.collection("FlashSaleCollection")
+
+
+		app.get("/users", async (req, res) => {
+			const cursor = usersCollection.find();
+			const result = await cursor.toArray();
+			res.send(result);
+		});
+
+
+		app.get("/user/:email", async (req, res) => {
+			const email = req?.params.email
+			console.log(email);
+			if (email) {
+				const query = { email: email };
+				const result = await usersCollection.findOne(query);
+				res.send(result);
+			}
+
+		})
+
+
+
+
+		app.post("/users", async (req, res) => {
+
+			const user = req.body;
+
+			const existingUser = await usersCollection.findOne({ email: user?.email });
+
+			if (existingUser) {
+				return res.status(400).send({ message: "User already exists" });
+			}
+
+			const result = await usersCollection.insertOne(user);
+			res.send(result);
+		});
+
+
+		app.put("/users/update", async (req, res) => {
+			const updateUser = req.body;
+
+			const email = updateUser.email
+			// const email = req.params.email;
+			const query = { email: email };
+
+			console.log(email, updateUser);
+			const result = await usersCollection.updateOne(query, {
+				$set: updateUser,
+			});
+			res.send(result);
+			// console.log(id, updateUser);
+		});
+
+
 
 		// Category collections
+
+
 
 		app.get("/categories", async (req, res) => {
 			const cursor = categoryCollection.find();
@@ -186,7 +243,7 @@ async function run() {
 			console.log('Query:', query);
 
 			const checkProduct = await wishListCollection.findOne(query);
-			console.log("checkpoint" ,checkProduct);
+			console.log("checkpoint", checkProduct);
 
 			if (!checkProduct) {
 				const result = await wishListCollection.insertOne(
@@ -213,17 +270,17 @@ async function run() {
 			const email = req.query.email;
 			const id = req.query.id;
 
-			 console.log(email , id)
-		
-			if(id && email){
+			console.log(email, id)
+
+			if (id && email) {
 				const query = {
 					email: email,
 					productId: id
 				};
-			
+
 				try {
 					const cursor = await wishListCollection.find(query).toArray();
-			
+
 					if (cursor.length > 0) {
 						res.send({ wishListed: true });
 					} else {
@@ -235,7 +292,7 @@ async function run() {
 				}
 			}
 		});
-		
+
 
 		app.delete("/wishlist/:id", async (req, res) => {
 			const id = req.params.id;
@@ -265,7 +322,7 @@ async function run() {
 			console.log('Query:', query);
 
 			const checkProduct = await cartCollection.findOne(query);
-			console.log("checkpoint" ,checkProduct);
+			console.log("checkpoint", checkProduct);
 
 			if (!checkProduct) {
 				const result = await cartCollection.insertOne(
@@ -296,7 +353,7 @@ async function run() {
 			console.log(id, updateProduct);
 			const result = await cartCollection.updateOne(query, {
 				$set: {
-					quantity : updateProduct
+					quantity: updateProduct
 				},
 			});
 			res.send(result);
@@ -316,7 +373,7 @@ async function run() {
 		});
 
 		app.delete("/allCartItem", async (req, res) => {
-		
+
 			const result = await cartCollection.deleteMany({});
 			res.send(result);
 		});
@@ -329,13 +386,13 @@ async function run() {
 			// Find the existing products in the cart
 			const existingProducts = await cartCollection.find({ _id: { $in: productIds } }).toArray();
 			const existingProductIds = existingProducts.map(product => product._id);
-	
+
 			// Filter out the products that are already in the cart
 			const productsToInsert = cartProducts.filter(product => !existingProductIds.includes(product._id));
-	
+
 			// If all products are already in the cart, send a message
-			
-			
+
+
 			if (productsToInsert.length === 0) {
 				await wishListCollection.deleteMany({})
 				return res.status(400).send({ message: 'All products are already in the cart.' });
@@ -348,7 +405,7 @@ async function run() {
 		});
 
 
-		app.post("/orders" , async (req , res) => {
+		app.post("/orders", async (req, res) => {
 			const orders = req.body;
 			const result = await ordersCollection.insertOne(orders);
 			res.send(result);
@@ -358,12 +415,12 @@ async function run() {
 
 		app.get("/orders", async (req, res) => {
 			const email = req.query.email;
-			const query = { 
-				"customerDetail.email": email ,
-				 status : "pending" || "fulfilled"
+			const query = {
+				"customerDetail.email": email,
+				status: "pending" || "fulfilled"
 
 			}; // Correct way to construct the query
-		
+
 			const cursor = ordersCollection.find(query).sort({ date: -1 });
 			const result = await cursor.toArray();
 			res.send(result);
@@ -371,12 +428,12 @@ async function run() {
 
 		app.get("/cancelledOrder", async (req, res) => {
 			const email = req.query.email;
-			const query = { 
-				"customerDetail.email": email ,
-				 status : "cancelled"
+			const query = {
+				"customerDetail.email": email,
+				status: "cancelled"
 
 			}; // Correct way to construct the query
-		
+
 			const cursor = ordersCollection.find(query).sort({ date: -1 });
 			const result = await cursor.toArray();
 			res.send(result);
@@ -392,7 +449,7 @@ async function run() {
 
 			const result = await ordersCollection.updateOne(query, {
 				$set: {
-					status : updatedStatus
+					status: updatedStatus
 				},
 			});
 			res.send(result);
@@ -400,7 +457,103 @@ async function run() {
 			// console.log(id, updateProduct);
 			console.log(result);
 		});
-		
+
+		// --------------------FlashSale-----------------------
+
+		app.post("/flashSale", async (req, res) => {
+			const { startTime, endTime, products, discount } = req.body;
+
+			console.log(products)
+
+			try {
+				// Check if there's any flash sale running during the requested time period
+				const existingFlashSale = await FlashSaleCollection.findOne({
+					$or: [
+						{
+							startTime: { $lte: endTime },
+							endTime: { $gte: startTime }
+						}
+					]
+				});
+
+				if (existingFlashSale) {
+					// If an overlapping flash sale exists, reject the request
+					return res.status(400).json({ message: 'A flash sale is already running during the specified time period.' });
+				}
+
+				
+				// If no overlapping flash sale exists, insert the new flash sale
+				const result = await FlashSaleCollection.insertOne({ startTime, endTime, products, discount });
+
+				// add discountPrice property to original products
+				const productIds = products?.map(id => new ObjectId(id));
+				
+				const productsData = await productsCollection.find({
+					_id: { $in: productIds }
+				}).toArray();
+				
+				const updateOriginalProduct = productsData?.map(async product => {
+
+					const price = product.price
+					const discountedPrice = price - (price * (discount/100))
+
+					const query = { _id: new ObjectId(product._id) };
+
+					await productsCollection.updateOne(query, {
+						$set: {
+							discountedPrice:discountedPrice 
+						}
+					});	
+
+				})
+
+				await Promise.all(updateOriginalProduct);
+				res.send(result)
+
+
+			} catch (error) {
+				// Handle any errors that occur during the process
+				console.error(error);
+				res.status(500).json({ message: 'An error occurred while creating the flash sale.' });
+			}
+		});
+
+		app.get("/flashSale", async (req, res) => {
+			try {
+				const currentTime = new Date().toISOString();
+
+				const activeFlashSale = await FlashSaleCollection.findOne({
+					startTime: { $lte: currentTime },
+					endTime: { $gte: currentTime }
+				});
+
+				if (!activeFlashSale) {
+					return res.status(404).json({ message: "No active flash sales found." });
+				}
+
+				const productIds = activeFlashSale?.products?.map(id => new ObjectId(id));
+
+				const productsData = await productsCollection.find({
+					_id: { $in: productIds }
+				}).toArray();
+
+
+				const response = {
+					...activeFlashSale,
+					products: productsData
+				};
+
+
+				res.json(response);
+			} catch (error) {
+				console.error(error);
+				res.status(500).json({ message: "An error occurred while retrieving the flash sale." });
+			}
+		});
+
+
+
+
 
 
 
