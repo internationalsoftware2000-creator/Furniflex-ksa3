@@ -54,6 +54,7 @@ async function run() {
 		const cartCollection = database.collection("cartCollection");
 		const ordersCollection = database.collection("ordersCollection");
 		const FlashSaleCollection = database.collection("FlashSaleCollection")
+		const couponCollection = database.collection("couponCollection")
 
 
 		app.get("/users", async (req, res) => {
@@ -553,8 +554,65 @@ async function run() {
 
 
 
+		// ----------------------coupon----------------------------
 
 
+		app.post("/coupon", async (req, res) => {
+			const coupon = req.body;
+			const result = await couponCollection.insertOne(coupon);
+			res.send(result);
+
+		})
+
+		app.get("/coupon" ,async(req , res )=>{
+			const cursor = couponCollection.find()
+			const result = await cursor.toArray()
+			res.send(result)
+		})
+
+
+		app.delete("/coupon/:id", async (req, res) => {
+			const id = req.params.id;
+			const query = { _id: new ObjectId(id) };
+
+			console.log(id)
+			const result = couponCollection.deleteOne(query);
+
+			res.send(result);
+		});
+
+		app.post("/singleCoupon" ,async(req , res )=>{
+
+			const couponCode = req.body.coupon
+			const query = { couponCode: couponCode};
+
+			const coupon = await couponCollection.findOne(query)
+
+			if(coupon){
+				res.json({
+					success: true,
+					coupon: coupon.couponCode,
+					discount: coupon.discount,
+				});
+			}
+			else{
+				res.json({
+					success: false,
+					message: 'Invalid coupon code. Please try again.',
+				});
+			}
+
+
+
+			console.log(coupon)
+
+			// const cursor = couponCollection.find()
+			// const result = await cursor.toArray()
+			// res.send(result)
+		})
+
+
+	
 
 
 
