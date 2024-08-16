@@ -58,7 +58,15 @@ async function run() {
 
 
 		app.get("/users", async (req, res) => {
-			const cursor = usersCollection.find();
+
+			const { customer } = req.query
+
+			let query = {}
+			if (customer) {
+				query = { customer: true }
+			}
+			console.log(customer)
+			const cursor = usersCollection.find(query);
 			const result = await cursor.toArray();
 			res.send(result);
 		});
@@ -103,6 +111,23 @@ async function run() {
 			console.log(email, updateUser);
 			const result = await usersCollection.updateOne(query, {
 				$set: updateUser,
+			});
+			res.send(result);
+			// console.log(id, updateUser);
+		});
+
+		app.put("/users/role", async (req, res) => {
+			const email = req.body.email;
+
+			// const email = updateUser.email
+			// const email = req.params.email;
+			const query = { email: email };
+
+			console.log(email);
+			const result = await usersCollection.updateOne(query, {
+				$set: {
+					role: "admin"
+				},
 			});
 			res.send(result);
 			// console.log(id, updateUser);
@@ -418,7 +443,7 @@ async function run() {
 			const email = req.query.email;
 			const query = {
 				"customerDetail.email": email,
-				status: "pending" || "fulfilled"
+				status: { $in: ["pending", "completed"] }
 
 			}; // Correct way to construct the query
 
@@ -426,6 +451,24 @@ async function run() {
 			const result = await cursor.toArray();
 			res.send(result);
 		});
+
+		app.get("/allOrders", async (req, res) => {
+			const cursor = ordersCollection.find().sort({ date: -1 })
+			const result = await cursor.toArray()
+			res.send(result)
+		})
+
+
+		app.get("/singleOrders/:id", async (req, res) => {
+
+			const id = req.params.id
+
+			const query = { _id: new ObjectId(id) };
+
+			console.log(id, "id")
+			const result = await ordersCollection.findOne(query)
+			res.send(result)
+		})
 
 		app.get("/cancelledOrder", async (req, res) => {
 			const email = req.query.email;
@@ -459,6 +502,55 @@ async function run() {
 			console.log(result);
 		});
 
+
+		app.put("/completeOrder/update/:id", async (req, res) => {
+			const id = req.params.id;
+			const body = req.body
+			const query = { _id: new ObjectId(id) };
+
+			console.log(id)
+
+			console.log(body)
+
+			body?.productIDandQuantity?.map(async (item) => {
+
+				const id = item?.ProductID
+				const query = { _id: new ObjectId(id) }
+
+				console.log(id, item?.quantity)
+
+				const increaseSellCount = await productsCollection.updateOne(query, {
+					$set: {
+						sellCount: item?.quantity
+					},
+				});
+
+
+
+			});
+			const emailQuery = { email: body?.email }
+
+			const makeCustomer = await usersCollection.updateOne(emailQuery, {
+				$set: {
+					customer: true
+				},
+			});
+
+			console.log(makeCustomer)
+
+			const result = await ordersCollection.updateOne(query, {
+				$set: {
+					status: "completed"
+				},
+			});
+			res.send(result);
+
+
+		});
+
+
+
+
 		// --------------------FlashSale-----------------------
 
 		app.post("/flashSale", async (req, res) => {
@@ -482,29 +574,29 @@ async function run() {
 					return res.status(400).json({ message: 'A flash sale is already running during the specified time period.' });
 				}
 
-				
+
 				// If no overlapping flash sale exists, insert the new flash sale
 				const result = await FlashSaleCollection.insertOne({ startTime, endTime, products, discount });
 
 				// add discountPrice property to original products
 				const productIds = products?.map(id => new ObjectId(id));
-				
+
 				const productsData = await productsCollection.find({
 					_id: { $in: productIds }
 				}).toArray();
-				
+
 				const updateOriginalProduct = productsData?.map(async product => {
 
 					const price = product.price
-					const discountedPrice = price - (price * (discount/100))
+					const discountedPrice = price - (price * (discount / 100))
 
 					const query = { _id: new ObjectId(product._id) };
 
 					await productsCollection.updateOne(query, {
 						$set: {
-							discountedPrice:discountedPrice 
+							discountedPrice: discountedPrice
 						}
-					});	
+					});
 
 				})
 
@@ -564,7 +656,7 @@ async function run() {
 
 		})
 
-		app.get("/coupon" ,async(req , res )=>{
+		app.get("/coupon", async (req, res) => {
 			const cursor = couponCollection.find()
 			const result = await cursor.toArray()
 			res.send(result)
@@ -581,21 +673,21 @@ async function run() {
 			res.send(result);
 		});
 
-		app.post("/singleCoupon" ,async(req , res )=>{
+		app.post("/singleCoupon", async (req, res) => {
 
 			const couponCode = req.body.coupon
-			const query = { couponCode: couponCode};
+			const query = { couponCode: couponCode };
 
 			const coupon = await couponCollection.findOne(query)
 
-			if(coupon){
+			if (coupon) {
 				res.json({
 					success: true,
 					coupon: coupon.couponCode,
 					discount: coupon.discount,
 				});
 			}
-			else{
+			else {
 				res.json({
 					success: false,
 					message: 'Invalid coupon code. Please try again.',
@@ -612,7 +704,77 @@ async function run() {
 		})
 
 
-	
+
+		app.get("/statistics", async (req, res) => {
+
+
+
+			// for dashboard overview page stastics 
+
+			const totalProducts = await productsCollection.estimatedDocumentCount()
+			const totalOrder = await ordersCollection.estimatedDocumentCount()
+			const totalUsers = await usersCollection.estimatedDocumentCount()
+			const totalCompletedOrder = await ordersCollection.countDocuments({ status:  "completed" } );
+			const cancelledOrders = await ordersCollection.countDocuments({ status: "cancelled" });
+			const pendingOrder =  await ordersCollection.countDocuments({ status: "pending" });
+
+		
+
+
+			const result = await ordersCollection.aggregate([
+				{
+					$group: {
+						_id: null, // Group all documents together
+						totalPrice: { $sum: "$totalPrice" } // Sum the `quantity` field
+					}
+				},
+				{
+					$project: {
+						_id: 0, // Exclude the `_id` field
+						totalPrice: 1 // Include only the `totalQuantity` field
+					}
+				}
+			]).toArray();
+
+			const totalOrderPrice = result.length > 0 ? result[0].totalPrice : 0;
+
+
+			// for BarChart 
+
+			const BarChartResult = await categoryCollection.aggregate([
+				{
+					$lookup: {
+						from: "productsCollection",          // Collection to join
+						localField: "title",                // Field in categoryCollection
+						foreignField: "category",           // Field in productCollection
+						as: "products"                      // Name for the array of matched products
+					}
+				},
+				{
+					$addFields: {
+						totalProducts: { $size: "$products" } // Add a new field `totalProducts` with the count of matched products
+					}
+				},
+				{
+					$project: {
+						_id: 0,                               // Exclude `_id` field
+						category: "$title",                   // Rename `title` to `category`
+						totalProducts: 1                      // Include `totalProducts` field
+					}
+				}
+			]).toArray();
+
+			res.json({
+
+				overviewData : {
+					totalUsers, totalOrder , totalCompletedOrder,  cancelledOrders ,  totalProducts, totalOrderPrice, pendingOrder
+				},
+				BarChart : BarChartResult,
+
+		})
+
+		})
+
 
 
 
