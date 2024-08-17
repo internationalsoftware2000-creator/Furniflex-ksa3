@@ -1,5 +1,10 @@
 
 
+const jwt = require('jsonwebtoken');
+const cookieParser = require("cookie-parser");
+require('dotenv').config();
+
+
 const express = require("express");
 const cors = require("cors");
 const app = express();
@@ -10,8 +15,12 @@ const port = process.env.PORT || 5144;
 // create port
 
 
-app.use(cors());
+app.use(cors({
+	origin : ['http://localhost:5173' , 'https://bikroyelectronics.web.app/'],
+	credentials: true
+}));
 app.use(express.json());
+app.use(cookieParser());
 
 
 // use cors for middleware without using you can't access server
@@ -57,9 +66,76 @@ async function run() {
 		const couponCollection = database.collection("couponCollection")
 
 
-		app.get("/users", async (req, res) => {
+
+
+		// Json Web Token
+
+		console.log(process.env.SECRET_KEY ,"ulla")
+
+		app.post("/jwt" , async (req,res ) => {
+
+			
+			const result = req.body
+			console.log(result , "result fo jwt");
+			const token = jwt.sign(result , process.env.SECRET_KEY , {expiresIn: "1h"})
+
+			res
+			.cookie('token' , token , {
+			  httpOnly : true,
+			  secure: false,
+			sameSite: 'lax'
+	  
+	  
+			} )
+			.send({success : true})
+	  
+			// res.send(token)
+		  })
+
+
+		//   jwt middleware
+
+		const varifyToken = (req , res , next) => {
+			const token = req.cookies.token
+		
+		
+			// receive the token from cookie which is sent from clint
+		
+		
+			console.log("value of token in middleware" , token);
+			if(!token){
+		
+		
+			  return res.status(401).send({message : "not authorosized"})
+			}
+			//if the user has no token user will get not authorized message
+		 
+		   
+			jwt.verify(token , process.env.SECRET_KEY , (err , decoded) => {
+			  if(err){
+				console.log(err);
+				return res.status(401).send({message : "error authorized"})
+			  }
+			  // if user have token but some error happened user will also not get the data
+		
+		
+			  console.log("value in the token" , decoded);
+			  req.user = decoded
+			  next()
+			})
+		  }
+		
+		
+		
+
+
+	  
+		// user Api
+
+		app.get("/users", varifyToken ,async (req, res) => {
 
 			const { customer } = req.query
+			
 
 			let query = {}
 			if (customer) {
@@ -73,17 +149,14 @@ async function run() {
 
 
 		app.get("/user/:email", async (req, res) => {
-			const email = req?.params.email
+			const email = req.params.email;
 			console.log(email);
 			if (email) {
-				const query = { email: email };
+				const query = {email: (email) };
 				const result = await usersCollection.findOne(query);
 				res.send(result);
 			}
-
-		})
-
-
+		});
 
 
 		app.post("/users", async (req, res) => {
@@ -145,7 +218,7 @@ async function run() {
 			res.send(result);
 		});
 
-		app.post("/categories", async (req, res) => {
+		app.post("/categories",varifyToken , async (req, res) => {
 			const categories = req.body;
 			const result = await categoryCollection.insertOne(categories);
 			res.send(result);
@@ -239,7 +312,7 @@ async function run() {
 			}
 		});
 
-		app.put("/products/update/:id", async (req, res) => {
+		app.put("/products/update/:id", varifyToken ,async (req, res) => {
 			const id = req.params.id;
 			const query = { _id: new ObjectId(id) };
 
@@ -255,7 +328,7 @@ async function run() {
 
 		//   Wishlist 
 
-		app.post("/wishlist", async (req, res) => {
+		app.post("/wishlist",varifyToken , async (req, res) => {
 			const wishListProduct = req.body;
 
 
@@ -283,7 +356,7 @@ async function run() {
 			}
 		});
 
-		app.get("/wishlist", async (req, res) => {
+		app.get("/wishlist", varifyToken ,async (req, res) => {
 			const email = req.query.email;
 			const query = { email: email };
 
@@ -292,7 +365,7 @@ async function run() {
 			res.send(result);
 		});
 
-		app.get("/wishlistStatus", async (req, res) => {
+		app.get("/wishlistStatus",varifyToken , async (req, res) => {
 			const email = req.query.email;
 			const id = req.query.id;
 
@@ -320,7 +393,7 @@ async function run() {
 		});
 
 
-		app.delete("/wishlist/:id", async (req, res) => {
+		app.delete("/wishlist/:id", varifyToken ,async (req, res) => {
 			const id = req.params.id;
 			const query = { _id: new ObjectId(id) };
 
@@ -334,7 +407,7 @@ async function run() {
 		// cart 
 
 
-		app.post("/cart", async (req, res) => {
+		app.post("/cart" ,varifyToken , async (req, res) => {
 			const cartProduct = req.body;
 
 
@@ -362,16 +435,21 @@ async function run() {
 			}
 		});
 
-		app.get("/cart", async (req, res) => {
+		app.get("/cart", varifyToken , async (req, res) => {
 			const email = req.query.email;
 			const query = { email: email };
+			
+
+			const token = req.cookies.token;
+			console.log("token is ", token);
+	  
 
 			const cursor = cartCollection.find(query);
 			const result = await cursor.toArray();
 			res.send(result);
 		});
 
-		app.put("/cart/:id", async (req, res) => {
+		app.put("/cart/:id", varifyToken ,async (req, res) => {
 			const id = req.params.id;
 			const query = { _id: new ObjectId(id) };
 
@@ -387,7 +465,7 @@ async function run() {
 			console.log(id, updateProduct);
 			console.log(result);
 		});
-		app.delete("/cart/:id", async (req, res) => {
+		app.delete("/cart/:id",varifyToken , async (req, res) => {
 			const id = req.params.id;
 			const query = { _id: new ObjectId(id) };
 
@@ -398,13 +476,13 @@ async function run() {
 			res.send(result);
 		});
 
-		app.delete("/allCartItem", async (req, res) => {
+		app.delete("/allCartItem", varifyToken ,async (req, res) => {
 
 			const result = await cartCollection.deleteMany({});
 			res.send(result);
 		});
 
-		app.post("/moveToCart", async (req, res) => {
+		app.post("/moveToCart",varifyToken , async (req, res) => {
 			const cartProducts = req.body;
 
 			const productIds = cartProducts.map(product => product._id);
@@ -431,7 +509,7 @@ async function run() {
 		});
 
 
-		app.post("/orders", async (req, res) => {
+		app.post("/orders",varifyToken , async (req, res) => {
 			const orders = req.body;
 			const result = await ordersCollection.insertOne(orders);
 			res.send(result);
@@ -439,7 +517,7 @@ async function run() {
 		})
 
 
-		app.get("/orders", async (req, res) => {
+		app.get("/orders", varifyToken ,async (req, res) => {
 			const email = req.query.email;
 			const query = {
 				"customerDetail.email": email,
@@ -452,14 +530,14 @@ async function run() {
 			res.send(result);
 		});
 
-		app.get("/allOrders", async (req, res) => {
+		app.get("/allOrders", varifyToken ,async (req, res) => {
 			const cursor = ordersCollection.find().sort({ date: -1 })
 			const result = await cursor.toArray()
 			res.send(result)
 		})
 
 
-		app.get("/singleOrders/:id", async (req, res) => {
+		app.get("/singleOrders/:id",varifyToken , async (req, res) => {
 
 			const id = req.params.id
 
@@ -470,7 +548,7 @@ async function run() {
 			res.send(result)
 		})
 
-		app.get("/cancelledOrder", async (req, res) => {
+		app.get("/cancelledOrder",varifyToken , async (req, res) => {
 			const email = req.query.email;
 			const query = {
 				"customerDetail.email": email,
@@ -484,7 +562,7 @@ async function run() {
 		});
 
 
-		app.put("/order/update/:id", async (req, res) => {
+		app.put("/order/update/:id", varifyToken , async (req, res) => {
 			const id = req.params.id;
 			const query = { _id: new ObjectId(id) };
 
@@ -503,7 +581,7 @@ async function run() {
 		});
 
 
-		app.put("/completeOrder/update/:id", async (req, res) => {
+		app.put("/completeOrder/update/:id",varifyToken , async (req, res) => {
 			const id = req.params.id;
 			const body = req.body
 			const query = { _id: new ObjectId(id) };
@@ -553,7 +631,7 @@ async function run() {
 
 		// --------------------FlashSale-----------------------
 
-		app.post("/flashSale", async (req, res) => {
+		app.post("/flashSale",varifyToken , async (req, res) => {
 			const { startTime, endTime, products, discount } = req.body;
 
 			console.log(products)
@@ -649,21 +727,21 @@ async function run() {
 		// ----------------------coupon----------------------------
 
 
-		app.post("/coupon", async (req, res) => {
+		app.post("/coupon",varifyToken , async (req, res) => {
 			const coupon = req.body;
 			const result = await couponCollection.insertOne(coupon);
 			res.send(result);
 
 		})
 
-		app.get("/coupon", async (req, res) => {
+		app.get("/coupon", varifyToken ,async (req, res) => {
 			const cursor = couponCollection.find()
 			const result = await cursor.toArray()
 			res.send(result)
 		})
 
 
-		app.delete("/coupon/:id", async (req, res) => {
+		app.delete("/coupon/:id",varifyToken , async (req, res) => {
 			const id = req.params.id;
 			const query = { _id: new ObjectId(id) };
 
@@ -698,14 +776,11 @@ async function run() {
 
 			console.log(coupon)
 
-			// const cursor = couponCollection.find()
-			// const result = await cursor.toArray()
-			// res.send(result)
 		})
 
 
 
-		app.get("/statistics", async (req, res) => {
+		app.get("/statistics",varifyToken , async (req, res) => {
 
 
 
@@ -774,6 +849,8 @@ async function run() {
 		})
 
 		})
+
+
 
 
 

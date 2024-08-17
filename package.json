@@ -13,12 +13,14 @@
     "content-disposition": "^0.5.4",
     "content-type": "^1.0.5",
     "cookie": "^0.6.0",
+    "cookie-parser": "^1.4.6",
     "cookie-signature": "^1.0.6",
     "cors": "^2.8.5",
     "debug": "^2.6.9",
     "define-data-property": "^1.1.4",
     "depd": "^2.0.0",
     "destroy": "^1.2.0",
+    "dotenv": "^16.4.5",
     "ee-first": "^1.1.1",
     "encodeurl": "^1.0.2",
     "es-define-property": "^1.0.0",
@@ -40,6 +42,7 @@
     "iconv-lite": "^0.4.24",
     "inherits": "^2.0.4",
     "ipaddr.js": "^1.9.1",
+    "jsonwebtoken": "^9.0.2",
     "media-typer": "^0.3.0",
     "memory-pager": "^1.5.0",
     "merge-descriptors": "^1.0.1",
@@ -82,7 +85,6 @@
     "webidl-conversions": "^7.0.0",
     "whatwg-url": "^13.0.0"
   },
-  "devDependencies": {},
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
