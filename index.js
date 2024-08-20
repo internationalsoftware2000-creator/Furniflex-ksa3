@@ -149,13 +149,16 @@ async function run() {
 		const verifyAdmin = async (req, res, next) => {
 
 
-			const email = req.decoded.email;
+			const email = req.user.email;
 			const query = { email: email };
 
-
+			console.log(email  ,"email form vaify admin middleware")
+			
+			
 			const user = await usersCollection.findOne(query);
-			let admin = user?.role === "admin";
+			console.log(user  ,"user form vaify admin middleware")
 
+			let admin = user?.role === "admin";
 
 			if (!admin) {
 				return res.status(403).send({ messege: "forbidden Access" });
@@ -230,7 +233,7 @@ async function run() {
 		});
 
 		// To make an user admin of the website by email
-		app.put("/users/role", verifyAdmin , async (req, res) => {
+		app.put("/users/role",verifyToken, verifyAdmin , async (req, res) => {
 			const email = req.body.email;
 
 			// const email = updateUser.email
