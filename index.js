@@ -96,9 +96,18 @@ async function run() {
 
 
 		app.post("/clear", async (req, res) => {
-			console.log("clear cookies", req.user);
-			res.clearCookie('token').send({ message: "successfully cookie cleared" })
-		})
+			console.log("Clearing cookies for user:", req.user);
+		
+			res.clearCookie('token', {
+				httpOnly: true,
+				secure: true,
+				sameSite: 'none',
+				path: '/',  // Ensure this matches the path used when setting the cookie
+			});
+		
+			res.status(200).json({ message: "Successfully cleared cookie" });
+		});
+		
 
 
 
