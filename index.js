@@ -68,10 +68,11 @@ async function run() {
 
 
 
-		// Json Web Token
+		// ------------Json Web Token--------------
 
 		console.log(process.env.SECRET_KEY, "ulla")
 
+		// Create jwt token
 		app.post("/jwt", async (req, res) => {
 
 
@@ -94,26 +95,22 @@ async function run() {
 			// res.send(token)
 		})
 
-
+		// Clear jwt token
 		app.post("/clear", async (req, res) => {
 			console.log("Clearing cookies for user:", req.user);
-		
+
 			res.clearCookie('token', {
 				httpOnly: true,
 				secure: true,
 				sameSite: 'none',
 				path: '/',  // Ensure this matches the path used when setting the cookie
 			});
-		
+
 			res.status(200).json({ message: "Successfully cleared cookie" });
 		});
-		
-
-
 
 		//   jwt middleware
-
-		const varifyToken = (req, res, next) => {
+		const verifyToken = (req, res, next) => {
 			const token = req.cookies.token
 
 
@@ -145,38 +142,47 @@ async function run() {
 
 
 
+		//------------- Admin varification  -------------------
 
 
 
-		// user Api
-
-		app.get("/users", varifyToken, async (req, res) => {
-
-			const { customer } = req.query
+		const verifyAdmin = async (req, res, next) => {
 
 
-			let query = {}
-			if (customer) {
-				query = { customer: true }
+			const email = req.decoded.email;
+			const query = { email: email };
+
+
+			const user = await usersCollection.findOne(query);
+			let admin = user?.role === "admin";
+
+
+			if (!admin) {
+				return res.status(403).send({ messege: "forbidden Access" });
 			}
-			console.log(customer)
-			const cursor = usersCollection.find(query);
-			const result = await cursor.toArray();
-			res.send(result);
-		});
+
+			next();
+		};
 
 
+		// -------------user Management Api -------------------
+
+
+
+
+		// to get single user detail from my account Page
 		app.get("/user/:email", async (req, res) => {
 			const email = req.params.email;
 			console.log(email);
-			if (email) {
-				const query = { email: (email) };
-				const result = await usersCollection.findOne(query);
-				res.send(result);
-			}
+			// if (email) {
+			// }
+			const query = { email: email };
+			const result = await usersCollection.findOne(query);
+			console.log(result)
+			res.send(result);
 		});
 
-
+		// To post user Detail while user signup 
 		app.post("/users", async (req, res) => {
 
 			const user = req.body;
@@ -191,7 +197,7 @@ async function run() {
 			res.send(result);
 		});
 
-
+		// To update user Detail from My Accout page ( first name , last name , Address)
 		app.put("/users/update", async (req, res) => {
 			const updateUser = req.body;
 
@@ -207,7 +213,24 @@ async function run() {
 			// console.log(id, updateUser);
 		});
 
-		app.put("/users/role", async (req, res) => {
+		// To view normal user and customer from admin panel
+		app.get("/users", verifyToken,  verifyAdmin,async (req, res) => {
+
+			const { customer } = req.query
+
+
+			let query = {}
+			if (customer) {
+				query = { customer: true }
+			}
+			console.log(customer)
+			const cursor = usersCollection.find(query);
+			const result = await cursor.toArray();
+			res.send(result);
+		});
+
+		// To make an user admin of the website by email
+		app.put("/users/role", verifyAdmin , async (req, res) => {
 			const email = req.body.email;
 
 			// const email = updateUser.email
@@ -226,35 +249,53 @@ async function run() {
 
 
 
-		// Category collections
 
 
+		// --------------Category Management Api---------------------
 
+		// To view category Items 
 		app.get("/categories", async (req, res) => {
 			const cursor = categoryCollection.find();
 			const result = await cursor.toArray();
 			res.send(result);
 		});
 
-		app.post("/categories", varifyToken, async (req, res) => {
+		// To create new category Item 
+		app.post("/categories", verifyToken, async (req, res) => {
 			const categories = req.body;
 			const result = await categoryCollection.insertOne(categories);
 			res.send(result);
 		});
 
-		//  Product  collections
 
-		app.post("/products", async (req, res) => {
+
+
+		//  ---------------Product  Management Api---------------
+
+
+		// to post or add any product from admin panel
+		app.post("/products", verifyToken, verifyAdmin, async (req, res) => {
 			const product = req.body;
 			const result = await productsCollection.insertOne(product);
 			res.send(result);
 		});
-		// app.get("/products", async (req, res) => {
-		// 	const cursor = productsCollection.find();
-		// 	const result = await cursor.toArray();
-		// 	res.send(result);
-		// });
 
+		//  to update product detail from admin panel
+		app.put("/products/update/:id", verifyToken, verifyAdmin, async (req, res) => {
+			const id = req.params.id;
+			const query = { _id: new ObjectId(id) };
+
+			const updateProduct = req.body.data;
+			console.log(id, updateProduct);
+			const result = await productsCollection.updateOne(query, {
+				$set: updateProduct,
+			});
+			res.send(result);
+
+			console.log(id, updateProduct);
+		});
+
+		// to view all the product from home and allProduct page
 		app.get("/products", async (req, res) => {
 			const {
 				limit,
@@ -315,11 +356,13 @@ async function run() {
 			res.json(result);
 		});
 
+		// To count how many product are their for pagination in all product page
 		app.get("/productCount", async (req, res) => {
 			const count = await productsCollection.estimatedDocumentCount();
 			res.send({ count });
 		});
 
+		// To view product Detail  
 		app.get("/products/:id", async (req, res) => {
 			const id = req.params.id;
 			console.log(id);
@@ -330,23 +373,14 @@ async function run() {
 			}
 		});
 
-		app.put("/products/update/:id", varifyToken, async (req, res) => {
-			const id = req.params.id;
-			const query = { _id: new ObjectId(id) };
 
-			const updateProduct = req.body.data;
-			console.log(id, updateProduct);
-			const result = await productsCollection.updateOne(query, {
-				$set: updateProduct,
-			});
-			res.send(result);
 
-			console.log(id, updateProduct);
-		});
 
-		//   Wishlist 
+		//  -------------- Wishlist Management Api --------------------
 
-		app.post("/wishlist", varifyToken, async (req, res) => {
+
+		// add product to wishList by user 
+		app.post("/wishlist", verifyToken, async (req, res) => {
 			const wishListProduct = req.body;
 
 
@@ -374,7 +408,8 @@ async function run() {
 			}
 		});
 
-		app.get("/wishlist", varifyToken, async (req, res) => {
+		// view wishlist product by user
+		app.get("/wishlist", verifyToken, async (req, res) => {
 			const email = req.query.email;
 			const query = { email: email };
 
@@ -383,7 +418,8 @@ async function run() {
 			res.send(result);
 		});
 
-		app.get("/wishlistStatus", varifyToken, async (req, res) => {
+		// to check weather a product has been added to wishlist or not 
+		app.get("/wishlistStatus", verifyToken, async (req, res) => {
 			const email = req.query.email;
 			const id = req.query.id;
 
@@ -410,8 +446,8 @@ async function run() {
 			}
 		});
 
-
-		app.delete("/wishlist/:id", varifyToken, async (req, res) => {
+		// delete product from wishlist
+		app.delete("/wishlist/:id", verifyToken, async (req, res) => {
 			const id = req.params.id;
 			const query = { _id: new ObjectId(id) };
 
@@ -422,10 +458,12 @@ async function run() {
 			res.send(result);
 		});
 
-		// cart 
 
 
-		app.post("/cart", varifyToken, async (req, res) => {
+		// -----------------cart Management api ---------------------
+
+		// add product to cart by user
+		app.post("/cart", verifyToken, async (req, res) => {
 			const cartProduct = req.body;
 
 
@@ -453,7 +491,8 @@ async function run() {
 			}
 		});
 
-		app.get("/cart", varifyToken, async (req, res) => {
+		// view Cart product by user
+		app.get("/cart", verifyToken, async (req, res) => {
 			const email = req.query.email;
 			const query = { email: email };
 
@@ -467,7 +506,8 @@ async function run() {
 			res.send(result);
 		});
 
-		app.put("/cart/:id", varifyToken, async (req, res) => {
+		// to update cart (increase or decrees product quantity form cart )
+		app.put("/cart/:id", verifyToken, async (req, res) => {
 			const id = req.params.id;
 			const query = { _id: new ObjectId(id) };
 
@@ -483,7 +523,9 @@ async function run() {
 			console.log(id, updateProduct);
 			console.log(result);
 		});
-		app.delete("/cart/:id", varifyToken, async (req, res) => {
+
+		// to delete single product from cart
+		app.delete("/cart/:id", verifyToken, async (req, res) => {
 			const id = req.params.id;
 			const query = { _id: new ObjectId(id) };
 
@@ -494,13 +536,15 @@ async function run() {
 			res.send(result);
 		});
 
-		app.delete("/allCartItem", varifyToken, async (req, res) => {
+		// to delete all the product from cart together
+		app.delete("/allCartItem", verifyToken, async (req, res) => {
 
 			const result = await cartCollection.deleteMany({});
 			res.send(result);
 		});
 
-		app.post("/moveToCart", varifyToken, async (req, res) => {
+		//  To move all the product to cart from wishlist
+		app.post("/moveToCart", verifyToken, async (req, res) => {
 			const cartProducts = req.body;
 
 			const productIds = cartProducts.map(product => product._id);
@@ -527,7 +571,11 @@ async function run() {
 		});
 
 
-		app.post("/orders", varifyToken, async (req, res) => {
+
+		// ----------------------Orders Management Api ----------------------
+
+		// To post any order from user
+		app.post("/orders", verifyToken, async (req, res) => {
 			const orders = req.body;
 			const result = await ordersCollection.insertOne(orders);
 			res.send(result);
@@ -535,7 +583,8 @@ async function run() {
 		})
 
 
-		app.get("/orders", varifyToken, async (req, res) => {
+		// to view placed order from user dashboard
+		app.get("/orders", verifyToken, async (req, res) => {
 			const email = req.query.email;
 			const query = {
 				"customerDetail.email": email,
@@ -548,39 +597,9 @@ async function run() {
 			res.send(result);
 		});
 
-		app.get("/allOrders", varifyToken, async (req, res) => {
-			const cursor = ordersCollection.find().sort({ date: -1 })
-			const result = await cursor.toArray()
-			res.send(result)
-		})
 
-
-		app.get("/singleOrders/:id", varifyToken, async (req, res) => {
-
-			const id = req.params.id
-
-			const query = { _id: new ObjectId(id) };
-
-			console.log(id, "id")
-			const result = await ordersCollection.findOne(query)
-			res.send(result)
-		})
-
-		app.get("/cancelledOrder", varifyToken, async (req, res) => {
-			const email = req.query.email;
-			const query = {
-				"customerDetail.email": email,
-				status: "cancelled"
-
-			}; // Correct way to construct the query
-
-			const cursor = ordersCollection.find(query).sort({ date: -1 });
-			const result = await cursor.toArray();
-			res.send(result);
-		});
-
-
-		app.put("/order/update/:id", varifyToken, async (req, res) => {
+		// This api is user to cancel placed order by user from user dahsboard
+		app.put("/order/update/:id", verifyToken, async (req, res) => {
 			const id = req.params.id;
 			const query = { _id: new ObjectId(id) };
 
@@ -599,7 +618,43 @@ async function run() {
 		});
 
 
-		app.put("/completeOrder/update/:id", varifyToken, async (req, res) => {
+		// to view ordered that has been cancelled by user from user dashboard
+		app.get("/cancelledOrder", verifyToken, async (req, res) => {
+			const email = req.query.email;
+			const query = {
+				"customerDetail.email": email,
+				status: "cancelled"
+
+			}; // Correct way to construct the query
+
+			const cursor = ordersCollection.find(query).sort({ date: -1 });
+			const result = await cursor.toArray();
+			res.send(result);
+		});
+
+
+		//  to view all the order from admin panel 
+		app.get("/allOrders", verifyToken, verifyAdmin, async (req, res) => {
+			const cursor = ordersCollection.find().sort({ date: -1 })
+			const result = await cursor.toArray()
+			res.send(result)
+		})
+
+		// to view order details on admin panel
+		app.get("/singleOrders/:id", verifyToken, verifyAdmin, async (req, res) => {
+
+			const id = req.params.id
+
+			const query = { _id: new ObjectId(id) };
+
+			console.log(id, "id")
+			const result = await ordersCollection.findOne(query)
+			res.send(result)
+		})
+
+
+		// To complete order (pending to completed) from admin panel 
+		app.put("/completeOrder/update/:id", verifyToken, async (req, res) => {
 			const id = req.params.id;
 			const body = req.body
 			const query = { _id: new ObjectId(id) };
@@ -649,7 +704,7 @@ async function run() {
 
 		// --------------------FlashSale-----------------------
 
-		app.post("/flashSale", varifyToken, async (req, res) => {
+		app.post("/flashSale", verifyToken, verifyAdmin, async (req, res) => {
 			const { startTime, endTime, products, discount } = req.body;
 
 			console.log(products)
@@ -745,21 +800,21 @@ async function run() {
 		// ----------------------coupon----------------------------
 
 
-		app.post("/coupon", varifyToken, async (req, res) => {
+		app.post("/coupon", verifyToken, verifyAdmin, async (req, res) => {
 			const coupon = req.body;
 			const result = await couponCollection.insertOne(coupon);
 			res.send(result);
 
 		})
 
-		app.get("/coupon", varifyToken, async (req, res) => {
+		app.get("/coupon", verifyToken, verifyAdmin, async (req, res) => {
 			const cursor = couponCollection.find()
 			const result = await cursor.toArray()
 			res.send(result)
 		})
 
 
-		app.delete("/coupon/:id", varifyToken, async (req, res) => {
+		app.delete("/coupon/:id", verifyToken, verifyAdmin, async (req, res) => {
 			const id = req.params.id;
 			const query = { _id: new ObjectId(id) };
 
@@ -769,6 +824,9 @@ async function run() {
 			res.send(result);
 		});
 
+
+
+		// This Api is used while user enter coupon number  on cart page to get discount
 		app.post("/singleCoupon", async (req, res) => {
 
 			const couponCode = req.body.coupon
@@ -798,7 +856,7 @@ async function run() {
 
 
 
-		app.get("/statistics", varifyToken, async (req, res) => {
+		app.get("/statistics", verifyToken, verifyAdmin, async (req, res) => {
 
 
 
