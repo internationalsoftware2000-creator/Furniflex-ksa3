@@ -117,7 +117,7 @@ async function run() {
 			// receive the token from cookie which is sent from clint
 
 
-			console.log("value of token in middleware", token);
+			// console.log("value of token in middleware", token);
 			if (!token) {
 
 
@@ -134,7 +134,7 @@ async function run() {
 				// if user have token but some error happened user will also not get the data
 
 
-				console.log("value in the token", decoded);
+				// console.log("value in the token", decoded);
 				req.user = decoded
 				next()
 			})
@@ -152,7 +152,7 @@ async function run() {
 			const email = req.user.email;
 			const query = { email: email };
 
-			console.log(email  ,"email form vaify admin middleware")
+			// console.log(email  ,"email form vaify admin middleware")
 			
 			
 			const user = await usersCollection.findOne(query);
@@ -176,7 +176,7 @@ async function run() {
 		// to get single user detail from my account Page
 		app.get("/user/:email", async (req, res) => {
 			const email = req.params.email;
-			console.log(email);
+			console.log(email , "email from admin check");
 			// if (email) {
 			// }
 			const query = { email: email };
