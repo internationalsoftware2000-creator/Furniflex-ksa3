@@ -89,14 +89,14 @@ async function run() {
 
 			res
 				.cookie('token', token, {
-					httpOnly: true,
-					secure: false,
-					sameSite: 'lax',
 					// httpOnly: true,
-					// secure: true,
-					// sameSite: 'none',
-					// path: '/',
-					// maxAge: 360000000
+					// secure: false,
+					// sameSite: 'lax',
+					httpOnly: true,
+					secure: true,
+					sameSite: 'none',
+					path: '/',
+					maxAge: 360000000
 
 
 				})
@@ -607,14 +607,17 @@ async function run() {
 			// const result = await ordersCollection.insertOne(orders);
 			// res.send(result);
 
+			const discountedPrice = orders?.totalPrice - (orders?.totalPrice * (orders?.discount / 100));
+
+
 
 
 			const data = {
-				total_amount: orders?.totalPrice,
+				total_amount: discountedPrice,
 				currency: 'BDT',
 				tran_id: TransID, // use unique tran_id for each api call
-				success_url: 'http://localhost:5144/payment/success',
-				fail_url: 'http://localhost:5144/payment/failed',
+				success_url: 'https://bikroyelectronics-server.vercel.app/payment/success',
+				fail_url: 'https://bikroyelectronics-server.vercel.app/payment/failed',
 				cancel_url: 'http://localhost:3030/cancel',
 				ipn_url: 'http://localhost:3030/ipn',
 				shipping_method: orders?.paymentMethod,
@@ -665,10 +668,14 @@ async function run() {
 				const result = await ordersCollection.insertOne(OrderData);
 
 				if (result?.acknowledged) {
-					res.redirect("http://localhost:5173/payment/success")
+					const result = await  cartCollection.deleteMany({email : orders?.customerDetail?.email})
+
+					if(result?.acknowledged){
+
+						res.redirect("https://bikroyelectronics.web.app/payment/success")
+					}
+
 				}
-
-
 				console.log(result, "success")
 
 
@@ -678,11 +685,7 @@ async function run() {
 
 			app.post('/payment/failed', async (req, res) => {
 
-
-
-				res.redirect("http://localhost:5173/payment/failed")
-
-
+				res.redirect("https://bikroyelectronics.web.app/payment/failed")
 
 
 			});
