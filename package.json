@@ -74,6 +74,7 @@
     "setprototypeof": "^1.2.0",
     "side-channel": "^1.0.6",
     "sparse-bitfield": "^3.0.3",
+    "sslcommerz-lts": "^1.1.0",
     "statuses": "^2.0.1",
     "toidentifier": "^1.0.1",
     "tr46": "^4.1.1",
@@ -87,7 +88,7 @@
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node index.js" 
+    "start": "node index.js"
   },
   "keywords": [],
   "author": "",

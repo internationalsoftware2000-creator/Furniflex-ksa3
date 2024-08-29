@@ -3,6 +3,8 @@
 const jwt = require('jsonwebtoken');
 const cookieParser = require("cookie-parser");
 require('dotenv').config();
+const SSLCommerzPayment = require('sslcommerz-lts')
+
 
 
 const express = require("express");
@@ -26,6 +28,10 @@ app.use(cookieParser());
 // use cors for middleware without using you can't access server
 // The express.json() middleware is used to parse incoming JSON requests
 
+
+const store_id = 'mycom66d0151478e40'
+const store_passwd = 'mycom66d0151478e40@ssl'
+const is_live = false //true for live, false for sandbox
 
 
 app.get("/", (req, res) => {
@@ -75,6 +81,7 @@ async function run() {
 		// Create jwt token
 		app.post("/jwt", async (req, res) => {
 
+			console.log("tokenn hit for jwt")
 
 			const result = req.body
 			console.log(result, "result fo jwt");
@@ -83,10 +90,13 @@ async function run() {
 			res
 				.cookie('token', token, {
 					httpOnly: true,
-					secure: true,
-					sameSite: 'none',
-					path: '/',
-					maxAge: 360000000
+					secure: false,
+					sameSite: 'lax',
+					// httpOnly: true,
+					// secure: true,
+					// sameSite: 'none',
+					// path: '/',
+					// maxAge: 360000000
 
 
 				})
@@ -153,10 +163,10 @@ async function run() {
 			const query = { email: email };
 
 			// console.log(email  ,"email form vaify admin middleware")
-			
-			
+
+
 			const user = await usersCollection.findOne(query);
-			console.log(user  ,"user form vaify admin middleware")
+			console.log(user, "user form vaify admin middleware")
 
 			let admin = user?.role === "admin";
 
@@ -176,7 +186,7 @@ async function run() {
 		// to get single user detail from my account Page
 		app.get("/user/:email", async (req, res) => {
 			const email = req.params.email;
-			console.log(email , "email from admin check");
+			console.log(email, "email from admin check");
 			// if (email) {
 			// }
 			const query = { email: email };
@@ -217,7 +227,7 @@ async function run() {
 		});
 
 		// To view normal user and customer from admin panel
-		app.get("/users", verifyToken,  verifyAdmin,async (req, res) => {
+		app.get("/users", verifyToken, verifyAdmin, async (req, res) => {
 
 			const { customer } = req.query
 
@@ -233,7 +243,7 @@ async function run() {
 		});
 
 		// To make an user admin of the website by email
-		app.put("/users/role",verifyToken, verifyAdmin , async (req, res) => {
+		app.put("/users/role", verifyToken, verifyAdmin, async (req, res) => {
 			const email = req.body.email;
 
 			// const email = updateUser.email
@@ -586,6 +596,104 @@ async function run() {
 		})
 
 
+
+
+		app.post("/SSL/orders", verifyToken, async (req, res) => {
+			const orders = req.body;
+			const TransID = new ObjectId().toString()
+
+			const productNames = orders.OrderDetails.map(item => item.title).join(', ');
+			const productCategories = orders.OrderDetails.map(item => item.category).join(', ');
+			// const result = await ordersCollection.insertOne(orders);
+			// res.send(result);
+
+
+
+			const data = {
+				total_amount: orders?.totalPrice,
+				currency: 'BDT',
+				tran_id: TransID, // use unique tran_id for each api call
+				success_url: 'http://localhost:5144/payment/success',
+				fail_url: 'http://localhost:5144/payment/failed',
+				cancel_url: 'http://localhost:3030/cancel',
+				ipn_url: 'http://localhost:3030/ipn',
+				shipping_method: orders?.paymentMethod,
+				product_name: productNames,
+				product_category: productCategories,
+				product_profile: 'general',
+				cus_name: orders?.customerDetail?.name,
+				cus_email: orders?.customerDetail?.email,
+				cus_add1: orders?.customerDetail?.address,
+				cus_add2: 'Dhaka',
+				cus_city: 'Dhaka',
+				cus_state: 'Dhaka',
+				cus_postcode: '1000',
+				cus_country: 'Bangladesh',
+				cus_phone: orders?.customerDetail?.PhoneNumber,
+				cus_fax: '01711111111',
+				ship_name: 'Customer Name',
+				ship_add1: orders?.customerDetail?.address,
+				ship_add2: 'Dhaka',
+				ship_city: 'Dhaka',
+				ship_postcode: 1000,
+				ship_state: 'Dhaka',
+				ship_country: 'Bangladesh',
+			};
+
+			const sslcz = new SSLCommerzPayment(store_id, store_passwd, is_live)
+			sslcz.init(data).then(apiResponse => {
+				console.log('API Response:', apiResponse); // Add this line
+				if (apiResponse.GatewayPageURL) {
+					let GatewayPageURL = apiResponse.GatewayPageURL;
+					res.send({ url: GatewayPageURL });
+					console.log('Redirecting to:', GatewayPageURL);
+				} else {
+					res.status(500).send({ error: 'Failed to get the payment gateway URL.' });
+				}
+			}).catch(error => {
+				console.error('Error initializing SSLCommerz:', error);
+				res.status(500).send({ error: 'Error initializing SSLCommerz.' });
+			});
+
+
+
+
+			app.post('/payment/success', async (req, res) => {
+
+				const OrderData = { TransID, ...orders }
+
+				const result = await ordersCollection.insertOne(OrderData);
+
+				if (result?.acknowledged) {
+					res.redirect("http://localhost:5173/payment/success")
+				}
+
+
+				console.log(result, "success")
+
+
+
+			});
+
+
+			app.post('/payment/failed', async (req, res) => {
+
+
+
+				res.redirect("http://localhost:5173/payment/failed")
+
+
+
+
+			});
+
+
+
+
+
+		})
+
+
 		// to view placed order from user dashboard
 		app.get("/orders", verifyToken, async (req, res) => {
 			const email = req.query.email;
@@ -599,6 +707,8 @@ async function run() {
 			const result = await cursor.toArray();
 			res.send(result);
 		});
+
+
 
 
 		// This api is user to cancel placed order by user from user dahsboard
