@@ -41,7 +41,7 @@ app.get("/", (req, res) => {
 
 
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
-const uri = "mongodb+srv://mustafiz8260:BX58G1x7A189eFOO@bikroyelectroniscluster.9ujswdc.mongodb.net/?retryWrites=true&w=majority&appName=BikroyElectronisCluster";
+const uri = process.env.MONGODB_URI
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
@@ -57,7 +57,7 @@ async function run() {
 		// Connect the client to the server	(optional starting in v4.7)
 		// await client.connect();
 		// Send a ping to confirm a successful connection
-		// await client.db("admin").command({ ping: 1 });
+		await client.db("admin").command({ ping: 1 });
 		console.log("Pinged your deployment. You successfully connected to MongoDB!");
 
 
@@ -198,8 +198,13 @@ async function run() {
 		// To post user Detail while user signup 
 		app.post("/users", async (req, res) => {
 
+			console.log("hit")
+
 			const user = req.body;
 
+
+			console.log(user)
+			console.log(process.env.MONGODB_URI)
 			const existingUser = await usersCollection.findOne({ email: user?.email });
 
 			if (existingUser) {
