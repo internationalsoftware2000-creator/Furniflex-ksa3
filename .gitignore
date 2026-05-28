@@ -2,3 +2,4 @@
 .vscode
 no-bg.png
 .env
+node_modules
