@@ -440,6 +440,39 @@ async function run() {
         res.status(500).json({ message: "Server error", error: err.message });
       }
     });
+
+
+	app.get("/fix-prices", async (req, res) => {
+  try {
+    const products = await productsCollection.find({}).toArray();
+
+    const bulkOps = products.map((product) => ({
+      updateOne: {
+        filter: { _id: product._id },
+        update: {
+          $set: {
+            price: Number(product.price),
+            discountedPrice: product.discountedPrice
+              ? Number(product.discountedPrice)
+              : product.discountedPrice,
+          },
+        },
+      },
+    }));
+
+    await productsCollection.bulkWrite(bulkOps);
+
+    res.send({
+      success: true,
+      message: "All prices updated to number type",
+    });
+  } catch (error) {
+    res.status(500).send({
+      success: false,
+      message: error.message,
+    });
+  }
+});
     // To count how many product are their for pagination in all product page
     app.get("/productCount", async (req, res) => {
       const { categories, minPrice, maxPrice, searchText } = req.query;
