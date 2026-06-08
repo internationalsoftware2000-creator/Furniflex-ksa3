@@ -9,7 +9,7 @@ const app = express();
 const port = process.env.PORT || 5144;
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
-const endpointSecret =process.env.STRIPE_ENDPOINT_SECRET;
+const endpointSecret = process.env.STRIPE_ENDPOINT_SECRET;
 
 app.use(
   cors({
@@ -111,11 +111,12 @@ app.post(
   },
 );
 
+app.use(express.urlencoded({ extended: true })); 
 app.use(express.json());
 app.use(cookieParser());
 
-const store_id = process.env.SSL_STORE_ID ;
-const store_passwd = process.env.SSL_STORE_PASS ;
+const store_id = process.env.SSL_STORE_ID;
+const store_passwd = process.env.SSL_STORE_PASS;
 const is_live = false; // true for live, false for sandbox
 
 app.get("/", (req, res) => {
@@ -814,7 +815,6 @@ app.post("/orders", verifyToken, async (req, res) => {
 
     if (orderResult.insertedId) {
       if (data.paymentMethod === "COD") {
-        
         const objectIDs = cartIDs.map(item => new ObjectId(item));
 
         const deletedResult = await cartCollection.deleteMany({
@@ -822,8 +822,6 @@ app.post("/orders", verifyToken, async (req, res) => {
             $in: objectIDs,
           },
         });
-
-
 
         res.status(201).json({
           message: "Order created successfully",
@@ -878,58 +876,61 @@ app.post("/orders", verifyToken, async (req, res) => {
         console.log(products);
       } else if (data.paymentMethod === "SSL") {
         const totalAmount = orderPayload.totalPrice;
-        const transID = new ObjectId().toString();
-        console.log(transID);
+        const transID = orderResult.insertedId.toString(); // Use the database Order ID as the unique Transaction ID
 
-        console.log(cartIDs);
-        const encodedUrl = encodeURIComponent(cartIDs);
-        console.log(encodedUrl);
+        // Safely pass the cartIDs in the query string so the success handler knows what to delete.
+        // Note: Storing cartIDs inside the Order document is generally safer, but this query parameter method works too.
+        const encodedCartIds = encodeURIComponent(JSON.stringify(cartIDs));
 
-        // Renamed to 'paymentData' to avoid conflict with the 'data' variable above
         const paymentData = {
-          total_amount: totalAmount * 122,
+          total_amount: totalAmount, // If converted from USD to BDT, multiply accordingly (e.g., totalAmount * 120)
           currency: "BDT",
-          tran_id: "REF123", // Use a unique transaction ID for each API call (e.g., orderResult.insertedId)
-          success_url: `http://localhost:3000/success/${orderResult.insertedId}?cartIds=${encodedUrl}`,
-          fail_url: `http://localhost:3000/failed/${orderResult.insertedId}`,
-          cancel_url: "http://localhost:3000/cancel",
-          ipn_url: "http://localhost:3000/ipn",
+          tran_id: transID,
+
+          // Point these to your Backend server routes
+          success_url: `http://localhost:5144/payment/ssl-success/${transID}?cartIds=${encodedCartIds}`,
+          fail_url: `http://localhost:5144/payment/ssl-fail/${transID}`,
+          cancel_url: `http://localhost:5144/payment/ssl-cancel/${transID}`,
+          ipn_url: `http://localhost:5144/payment/ssl-ipn?cartIds=${encodedCartIds}`,
+
           shipping_method: "Courier",
-          product_name: "Computer.",
-          product_category: "Electronic",
+          // Create a product name string from the cart items
+          product_name:
+            data.cartData
+              ?.map(item => item.productName || "Product")
+              .join(", ") || "Order Items",
+          product_category: "Retail",
           product_profile: "general",
-          cus_name: "Customer Name",
-          cus_email: "customer@example.com",
-          cus_add1: "Dhaka",
+
+          // Dynamic customer details from request data
+          cus_name: data.customerName || "Customer Name",
+          cus_email: data.customerEmail || "customer@example.com",
+          cus_add1: data.shippingAddress || "Dhaka",
           cus_add2: "Dhaka",
-          cus_city: "Dhaka",
-          cus_state: "Dhaka",
-          cus_postcode: "1000",
+          cus_city: data.city || "Dhaka",
+          cus_state: data.state || "Dhaka",
+          cus_postcode: data.postcode || "1000",
           cus_country: "Bangladesh",
-          cus_phone: "01711111111",
-          cus_fax: "01711111111",
-          ship_name: "Customer Name",
-          ship_add1: "Dhaka",
+          cus_phone: data.phone || "01700000000",
+          cus_fax: data.phone || "01700000000",
+
+          ship_name: data.customerName || "Customer Name",
+          ship_add1: data.shippingAddress || "Dhaka",
           ship_add2: "Dhaka",
-          ship_city: "Dhaka",
-          ship_state: "Dhaka",
-          ship_postcode: 1000,
+          ship_city: data.city || "Dhaka",
+          ship_state: data.state || "Dhaka",
+          ship_postcode: data.postcode || "1000",
           ship_country: "Bangladesh",
-          value_a: JSON.stringify(cartIDs),
         };
 
-        console.log(paymentData);
-
-        const sslcz = new SSLCommerzPayment(store_id, store_passwd, is_live); //
+        const sslcz = new SSLCommerzPayment(store_id, store_passwd, is_live);
 
         sslcz
           .init(paymentData)
           .then(apiResponse => {
-            // Redirect the user to the payment gateway
-            console.log(apiResponse);
             let GatewayPageURL = apiResponse.GatewayPageURL;
+            // Return the SSLCommerz gateway payment URL back to the frontend
             res.json({ url: GatewayPageURL });
-            console.log("Redirecting to: ", GatewayPageURL);
           })
           .catch(error => {
             console.error("SSLCommerz Initialization Error:", error);
@@ -937,6 +938,8 @@ app.post("/orders", verifyToken, async (req, res) => {
               .status(500)
               .json({ error: "Failed to initialize payment gateway." });
           });
+      } else if (data.paymentMethod === "Bkash"){
+        console.log("selected bkash")
       }
     }
   } catch (error) {
@@ -1115,6 +1118,99 @@ app.get("/orders", verifyToken, async (req, res) => {
 
   console.log(email);
 });
+
+// ssl apis updated below
+
+// SSLCommerz Success Route
+app.post("/payment/ssl-success/:orderId", async (req, res) => {
+  console.log("hit here");
+  const { orderId } = req.params;
+  const paymentResponse = req.body; // SSLCommerz sends payment data here
+
+  try {
+    const sslcz = new SSLCommerzPayment(store_id, store_passwd, is_live);
+
+    // Validate the transaction with SSLCommerz servers
+    const validationResult = await sslcz.validate(paymentResponse);
+
+    console.log(validationResult);
+
+    if (validationResult.status === "VALID") {
+      const DB = client.db("UsersDB");
+      const orderCollection = DB.collection("ordersCollection");
+      const cartCollection = DB.collection("cartCollection");
+
+      // 1. Update the order status in the database
+      await orderCollection.updateOne(
+        { _id: new ObjectId(orderId) },
+        {
+          $set: {
+            paymentStatus: "completed",
+            sslTransactionId: validationResult.bank_tran_id,
+          },
+        },
+      );
+
+      // 2. Clear the cart
+      const cartIdsParam = req.query.cartIds;
+      if (cartIdsParam) {
+        const cartIds = JSON.parse(decodeURIComponent(cartIdsParam));
+        const objectIDs = cartIds.map(id => new ObjectId(id));
+        await cartCollection.deleteMany({
+          _id: { $in: objectIDs },
+        });
+      }
+
+      // 3. Redirect the user back to the Frontend success page
+      return res.redirect("http://localhost:5173/payment/success");
+    } else {
+      // Payment validation failed
+      return res.redirect(
+        `http://localhost:5173/payment/failed?orderId=${orderId}`,
+      );
+    }
+  } catch (error) {
+    console.error("Error processing SSLCommerz success response:", error);
+    return res.redirect(
+      `http://localhost:5173/payment/failed?orderId=${orderId}`,
+    );
+  }
+});
+
+// SSLCommerz Fail Route
+app.post("/payment/ssl-fail/:orderId", async (req, res) => {
+  const { orderId } = req.params;
+
+  // 1. Log the full payload in your backend terminal to inspect it
+  console.log("--- SSLCommerz Failure Callback Payload ---");
+  console.log(req.body);
+  console.log("-------------------------------------------");
+
+  // 2. Extract the failure reason sent by SSLCommerz
+  // 'error' typically contains the error message, 'status' contains the transaction state.
+  const failureReason =
+    req.body.error || req.body.status || "Unknown payment failure";
+
+  // Optional: Update database to mark order as "failed" here if needed.
+
+  // 3. Send the failure reason to your frontend as a query parameter
+  const encodedReason = encodeURIComponent(failureReason);
+  return res.redirect(
+    `http://localhost:5173/payment/failed?orderId=${orderId}&reason=${encodedReason}`,
+  );
+});
+
+// SSLCommerz Cancel Route
+app.post("/payment/ssl-cancel/:orderId", async (req, res) => {
+  const { orderId } = req.params;
+
+  // Optional: Update database to mark order as "cancelled"
+  return res.redirect(
+    `http://localhost:5173/payment/cancel?orderId=${orderId}`,
+  );
+});
+
+// ssl apis updated below
 
 // This api is user to cancel placed order by user from user dahsboard
 app.put("/order/update/:id", verifyToken, async (req, res) => {
