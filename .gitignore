@@ -1,0 +1,6 @@
+.vercel
+.vscode
+no-bg.png
+.env
+node_modules
+.env*.local
