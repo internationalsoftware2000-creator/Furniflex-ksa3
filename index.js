@@ -707,6 +707,10 @@ app.delete("/cart/:id", verifyToken, async (req, res) => {
   res.send(result);
 });
 
+
+
+
+
 // to delete all the product from cart together
 app.delete("/allCartItem", verifyToken, async (req, res) => {
   const result = await cartCollection.deleteMany({});
@@ -740,7 +744,8 @@ app.post("/moveToCart", verifyToken, async (req, res) => {
 });
 
 // ----------------------Orders Management Api ----------------------
-
+    console.log(process.env.STRIPE_SECRET_KEY)
+    console.log(process.env.STRIPE_ENDPOINT_SECRET)
 
 async function getBkashToken() {
     const cache = await bkashCacheCollection.findOne({ _id: "bkash_token" });
@@ -798,6 +803,9 @@ async function getBkashToken() {
         }
     }
 
+
+
+
     // Step 3: Request new token using grant
     const grantRes = await axios.post(
         process.env.SANDBOX_GRANT_TOKEN_API,
@@ -836,15 +844,17 @@ async function getBkashToken() {
 
 // http://localhost:5144/callback?orderID=6a26a9fa866f597c61cb6d76&cartIds=[%226a26a2879184dec25825ca10%22]&paymentID=TR0011Omn3WML1780918778359&status=success&signature=Z41mGnq9AF&apiVersion=1.2.0-beta/
 
+console.log( process.env.SANDBOX_EXECUTE_PAYMENT_API)
 
 // bKash Callback GET Route
 app.get("/callback", async (req, res) => {
   const { orderID, cartIds, paymentID, status } = req.query;
 
+
   if (!paymentID || !status) {
     return res.status(400).send("Missing paymentID or status");
   }
-
+  
   // Handle Cancelled or Failed payments from the checkout window
   if (status !== "success") {
     if (status === "cancel") {
@@ -854,9 +864,12 @@ app.get("/callback", async (req, res) => {
       `http://localhost:5173/payment/failed?orderId=${orderID}&reason=${status}`
     );
   }
-
+  
   try {
     const id_token = await getBkashToken();
+    console.log( { orderID, cartIds, paymentID, status , id_token})
+
+  
 
     // Call execute API to charge the customer
     const execRes = await axios.post(
@@ -1180,131 +1193,6 @@ app.post("/orders", verifyToken, async (req, res) => {
   }
 });
 
-app.post("/order", async (req, res) => {
-  const data = req.body;
-
-  // console.log(da ta);
-  const cartIDs = JSON.stringify(data.cartData.map(item => item._id));
-  const newCartData = req.body.cartData.map(item => ({
-    cartID: item._id,
-    productID: item.productDetails._id,
-    buyingPrice: item.productDetails.offeredPrice,
-    quantity: item.quantity,
-  }));
-
-  const orderPayload = {
-    ...data,
-    cartData: newCartData,
-    paymentStatus: "pending",
-    orderStatus: "pending",
-    orderDate: Date.now(),
-  };
-
-  console.log(orderPayload);
-
-  const orderResult = await orderCollection.insertOne(orderPayload);
-
-  if (orderResult.insertedId) {
-    if (data.paymentMethod == "COD") {
-      res.json({ url: "http://localhost:5173/user/my-order" });
-    } else if (data.paymentMethod == "stripe") {
-      const products = await Promise.all(
-        data.cartData.map(async item => {
-          const productInfo = await productCollection.findOne({
-            _id: new ObjectId(item.productDetails._id),
-          });
-
-          // console.log(productInfo);
-
-          return {
-            price_data: {
-              currency: "usd",
-              product_data: {
-                name: productInfo.title,
-                images: productInfo.imageUrls,
-              },
-              unit_amount: productInfo.offeredPrice * 100,
-            },
-            quantity: item.quantity,
-          };
-        }),
-      );
-
-      console.log(cartIDs);
-
-      const session = await stripe.checkout.sessions.create({
-        line_items: products,
-        metadata: {
-          orderID: String(orderResult.insertedId),
-          cartIDs: cartIDs,
-        },
-        mode: "payment",
-        success_url: "http://localhost:5173/success",
-      });
-
-      res.json({ url: session.url });
-    } else if (data.paymentMethod == "ssl") {
-      const store_id = process.env.SSL_STORE_ID;
-      const store_passwd = process.env.SSL_STORE_PASS;
-      const is_live = false;
-      const totalAmount = newCartData.reduce(
-        (acc, cv) => acc + parseFloat(cv.buyingPrice),
-        0,
-      );
-
-      console.log(cartIDs);
-      const encodedUrl = encodeURIComponent(cartIDs);
-      console.log(encodedUrl);
-
-      const data = {
-        total_amount: totalAmount * 122,
-        currency: "BDT",
-        tran_id: "REF123", // use unique tran_id for each api call
-        success_url:
-          `http://localhost:3000/success/${orderResult.insertedId}?cartIds=` +
-          encodedUrl,
-        fail_url: `http://localhost:3000/failed/${orderResult.insertedId}`,
-        cancel_url: "http://localhost:3000/cancel",
-        ipn_url: "http://localhost:3000/ipn",
-        shipping_method: "Courier",
-        product_name: "Computer.",
-        product_category: "Electronic",
-        product_profile: "general",
-        cus_name: "Customer Name",
-        cus_email: "customer@example.com",
-        cus_add1: "Dhaka",
-        cus_add2: "Dhaka",
-        cus_city: "Dhaka",
-        cus_state: "Dhaka",
-        cus_postcode: "1000",
-        cus_country: "Bangladesh",
-        cus_phone: "01711111111",
-        cus_fax: "01711111111",
-        ship_name: "Customer Name",
-        ship_add1: "Dhaka",
-        ship_add2: "Dhaka",
-        ship_city: "Dhaka",
-        ship_state: "Dhaka",
-        ship_postcode: 1000,
-        ship_country: "Bangladesh",
-        value_a: JSON.stringify(cartIDs),
-      };
-
-      const sslcz = new SSLCommerzPayment(store_id, store_passwd, is_live);
-
-      sslcz.init(data).then(apiResponse => {
-        // Redirect the user to payment gateway
-
-        // console.log(apiResponse);
-        let GatewayPageURL = apiResponse.GatewayPageURL;
-        res.json({ url: GatewayPageURL });
-        console.log("Redirecting to: ", GatewayPageURL);
-      });
-    } else {
-      res.send({ error: "please select a supported payment method " });
-    }
-  }
-});
 
 app.get("/orders", verifyToken, async (req, res) => {
   const email = req.query.email;
@@ -1454,7 +1342,7 @@ app.put("/order/update/:id", verifyToken, async (req, res) => {
 
   const result = await ordersCollection.updateOne(query, {
     $set: {
-      status: updatedStatus,
+      orderStatus: updatedStatus,
     },
   });
   res.send(result);
@@ -1468,12 +1356,37 @@ app.get("/cancelledOrder", verifyToken, async (req, res) => {
   const email = req.query.email;
   const query = {
     "customerDetail.email": email,
-    status: "cancelled",
+    orderStatus: "cancelled",
   }; // Correct way to construct the query
 
-  const cursor = ordersCollection.find(query).sort({ date: -1 });
-  const result = await cursor.toArray();
-  res.send(result);
+
+  const response = await ordersCollection.find(query).sort({ date: -1 }).toArray();
+
+    const product = await Promise.all(
+      response.map(async item => {
+        console.log(item);
+
+        const productInfo = await Promise.all(
+          item.cartData.map(async item => {
+            const result = await productsCollection.findOne({
+              _id: new ObjectId(item.productID),
+            });
+
+            return {
+              ...result,
+              quantity: item.quantity,
+              buyingPrice: item.buyingPrice,
+            };
+          }),
+        );
+
+        return {
+          ...item,
+          products: productInfo,
+        };
+      }),
+    )
+  res.send(product);
 });
 
 //  to view all the order from admin panel
@@ -1578,7 +1491,7 @@ app.put("/completeOrder/update/:id", verifyToken, async (req, res) => {
 
   const result = await ordersCollection.updateOne(query, {
     $set: {
-      status: "completed",
+      orderStatus: "completed",
     },
   });
   res.send(result);
