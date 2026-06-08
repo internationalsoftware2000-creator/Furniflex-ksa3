@@ -111,7 +111,7 @@ app.post(
   },
 );
 
-app.use(express.urlencoded({ extended: true })); 
+app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(cookieParser());
 
@@ -124,6 +124,7 @@ app.get("/", (req, res) => {
 });
 
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const { default: axios } = require("axios");
 const uri = process.env.MONGODB_URI;
 
 // Create a MongoClient with a MongoClientOptions object
@@ -145,6 +146,7 @@ const cartCollection = database.collection("cartCollection");
 const ordersCollection = database.collection("ordersCollection");
 const FlashSaleCollection = database.collection("FlashSaleCollection");
 const couponCollection = database.collection("couponCollection");
+const bkashCacheCollection = database.collection("bkashCacheCollection");
 
 // 2. Run the ping test in a non-blocking, background async IIFE
 (async () => {
@@ -739,6 +741,187 @@ app.post("/moveToCart", verifyToken, async (req, res) => {
 
 // ----------------------Orders Management Api ----------------------
 
+
+async function getBkashToken() {
+    const cache = await bkashCacheCollection.findOne({ _id: "bkash_token" });
+
+    // Step 1: Use cached token if valid
+    if (cache && cache.id_token && Date.now() < cache.expiry_time) {
+        await bkashCacheCollection.updateOne(
+            { _id: "bkash_token" },
+            { $set: { last_token_source: "cached" } }
+        );
+        console.log("♻️ Using cached token");
+        return cache.id_token;
+    }
+
+    // Step 2: Try refresh token if available
+    if (cache && cache.refresh_token) {
+        try {
+            const refreshRes = await axios.post(
+                process.env.SANDBOX_REFRESH_TOKEN_API,
+                {
+                    app_key: process.env.SANDBOX_APP_KEY,
+                    app_secret: process.env.SANDBOX_APP_SECRET_KEY,
+                    refresh_token: cache.refresh_token,
+                },
+                {
+                    headers: {
+                        "Content-Type": "application/json",
+                        Accept: "application/json",
+                        username: process.env.SANDBOX_USERNAME,
+                        password: process.env.SANDBOX_PASSWORD,
+                    },
+                }
+            );
+
+            const { id_token, expires_in, refresh_token } = refreshRes.data;
+
+            await bkashCacheCollection.updateOne(
+                { _id: "bkash_token" },
+                {
+                    $set: {
+                        id_token,
+                        refresh_token: refresh_token || cache.refresh_token,
+                        expiry_time: Date.now() + (Number(expires_in) - 60) * 1000,
+                        last_token_source: cache.last_token_source === "refresh" ? "refresh-again" : "refresh"
+                    },
+                },
+                { upsert: true }
+            );
+
+            console.log(`🔁 Token refreshed (${cache.last_token_source === "refresh" ? "refresh-again" : "refresh"})`);
+            return id_token;
+
+        } catch (err) {
+            console.warn("⚠️ Refresh token failed. Falling back to grant.");
+        }
+    }
+
+    // Step 3: Request new token using grant
+    const grantRes = await axios.post(
+        process.env.SANDBOX_GRANT_TOKEN_API,
+        {
+            app_key: process.env.SANDBOX_APP_KEY,
+            app_secret: process.env.SANDBOX_APP_SECRET_KEY,
+        },
+        {
+            headers: {
+                "Content-Type": "application/json",
+                Accept: "application/json",
+                username: process.env.SANDBOX_USERNAME,
+                password: process.env.SANDBOX_PASSWORD,
+            },
+        }
+    );
+
+    const { id_token, expires_in, refresh_token } = grantRes.data;
+
+    await bkashCacheCollection.updateOne(
+        { _id: "bkash_token" },
+        {
+            $set: {
+                id_token,
+                refresh_token,
+                expiry_time: Date.now() + (Number(expires_in) - 60) * 1000,
+                last_token_source: "grant"
+            },
+        },
+        { upsert: true }
+    );
+
+    console.log("🔐 Token granted (grant)");
+    return id_token;
+}
+
+// http://localhost:5144/callback?orderID=6a26a9fa866f597c61cb6d76&cartIds=[%226a26a2879184dec25825ca10%22]&paymentID=TR0011Omn3WML1780918778359&status=success&signature=Z41mGnq9AF&apiVersion=1.2.0-beta/
+
+
+// bKash Callback GET Route
+app.get("/callback", async (req, res) => {
+  const { orderID, cartIds, paymentID, status } = req.query;
+
+  if (!paymentID || !status) {
+    return res.status(400).send("Missing paymentID or status");
+  }
+
+  // Handle Cancelled or Failed payments from the checkout window
+  if (status !== "success") {
+    if (status === "cancel") {
+      return res.redirect(`http://localhost:5173/payment/cancel?orderId=${orderID}`);
+    }
+    return res.redirect(
+      `http://localhost:5173/payment/failed?orderId=${orderID}&reason=${status}`
+    );
+  }
+
+  try {
+    const id_token = await getBkashToken();
+
+    // Call execute API to charge the customer
+    const execRes = await axios.post(
+      process.env.SANDBOX_EXECUTE_PAYMENT_API,
+      { paymentID },
+      {
+        headers: {
+          Accept: "application/json",
+          Authorization: id_token,
+          "X-App-Key": process.env.SANDBOX_APP_KEY,
+        },
+      },
+    );
+
+    const data = execRes.data;
+    console.log("bKash Execute Response:", data);
+
+    if (data.statusCode === "0000") {
+      // Establish database connection matching your database structure
+      const DB = client.db("UsersDB");
+      const orderCollection = DB.collection("ordersCollection");
+      const cartCollection = DB.collection("cartCollection");
+
+      // 1. Update the order payment status to completed
+      await orderCollection.updateOne(
+        { _id: new ObjectId(orderID) },
+        {
+          $set: {
+            paymentStatus: "completed",
+            trxID: data.trxID,
+            customerMsisdn: data.customerMsisdn,
+            executedAt: new Date(),
+          },
+        },
+      );
+
+      // 2. Delete the associated items from the cart collection
+      if (cartIds) {
+        const parsedCartIds = JSON.parse(decodeURIComponent(cartIds));
+        const objectIDs = parsedCartIds.map(id => new ObjectId(id));
+        await cartCollection.deleteMany({
+          _id: { $in: objectIDs },
+        });
+      }
+
+      // 3. Redirect the browser directly back to your React frontend success page
+      return res.redirect(`http://localhost:5173/payment/success?orderId=${orderID}`);
+    } else {
+      console.error("bKash execution failed with status:", data.statusMessage);
+      return res.redirect(
+        `http://localhost:5173/payment/failed?orderId=${orderID}&reason=${encodeURIComponent(data.statusMessage)}`
+      );
+    }
+  } catch (error) {
+    console.error("Error processing bKash execution callback:", error);
+    return res.redirect(
+      `http://localhost:5173/payment/failed?orderId=${orderID}&reason=execution_error`
+    );
+  }
+});
+
+
+
+
+
 app.post("/orders", verifyToken, async (req, res) => {
   try {
     const data = req.body;
@@ -938,8 +1121,57 @@ app.post("/orders", verifyToken, async (req, res) => {
               .status(500)
               .json({ error: "Failed to initialize payment gateway." });
           });
-      } else if (data.paymentMethod === "Bkash"){
-        console.log("selected bkash")
+      } else if (data.paymentMethod === "Bkash") {
+        console.log("selected bkash");
+
+        try {
+          // Get authorization token
+          const id_token = await getBkashToken();
+          console.log(id_token)
+          const encodedCartIds = encodeURIComponent(JSON.stringify(cartIDs));
+
+          // Define redirect callback URL for bKash
+          const callbackUrl = `http://localhost:5144/callback?orderID=${orderResult.insertedId}&cartIds=${encodedCartIds}`;
+
+          const bkashRes = await axios.post(
+            process.env.SANDBOX_CREATE_PAYMENT_API,
+            {
+              mode: "0011",
+              payerReference: data.customerEmail || "customer@example.com",
+              callbackURL: callbackUrl,
+              amount: String(totalPrice),
+              currency: "BDT",
+              intent: "authorization",
+              merchantInvoiceNumber: orderResult.insertedId.toString(),
+            },
+            {
+              headers: {
+                "Content-Type": "application/json",
+                Accept: "application/json",
+                Authorization: id_token,
+                "X-App-Key": process.env.SANDBOX_APP_KEY,
+              },
+            },
+          );
+
+          const paymentData = bkashRes.data;
+
+
+          res.status(201).json({
+            message: "Order and bKash payment created successfully",
+            orderId: orderResult.insertedId,
+            order: orderPayload,
+            url: paymentData.bkashURL, // Send checkout link to frontend for routing
+          });
+        } catch (bkashError) {
+          console.error(
+            "Failed to initialize bKash payment:",
+            bkashError?.response?.data || bkashError.message,
+          );
+          res
+            .status(500)
+            .json({ error: "Failed to initialize bKash payment." });
+        }
       }
     }
   } catch (error) {
